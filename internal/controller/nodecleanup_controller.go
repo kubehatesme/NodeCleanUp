@@ -25,6 +25,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	nodecleanupcontrollerv1 "gitlab.arc.hcloud.io/ccp/hks/node-cleanup-controller/api/v1"
+
+	//////hyunyoung added//////
+	stlog "log"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	corev1 "k8s.io/api/core/v1"
 )
 
 // NodeCleanUpReconciler reconciles a NodeCleanUp object
@@ -47,7 +53,18 @@ type NodeCleanUpReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.17.2/pkg/reconcile
 func (r *NodeCleanUpReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	//_ = log.FromContext(ctx)
+
+	node := &corev1.Node{}
+	if err := r.Get(ctx, req.NamespacedName, node); err != nil {
+			// You can add your handling logic here, like marking some other resource as deleted or triggering other actions.
+			stlog.Print("Error getting Node")
+			return ctrl.Result{}, err
+	}
+
+	if !node.ObjectMeta.DeletionTimestamp.IsZero() {
+		stlog.Printf("Node %s has been deleted!\n", node.Name)
+	}
 
 	// TODO(user): your logic here
 
@@ -57,6 +74,24 @@ func (r *NodeCleanUpReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 // SetupWithManager sets up the controller with the Manager.
 func (r *NodeCleanUpReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&nodecleanupcontrollerv1.NodeCleanUp{}).
-		Complete(r)
+        For(&corev1.Node{}). // Node 리소스에 대한 워처를 설정합니다.
+		//Watches(&corev1.Event{}, &handler.EnqueueRequestForObject{}).
+        WithEventFilter(predicate.Funcs{
+			UpdateFunc: func(e event.UpdateEvent) bool {
+			 return false
+			},
+			DeleteFunc: func(e event.DeleteEvent) bool {
+				stlog.Print("Delete event received for Node :", e.Object.GetName(), "\n", e.Object.GetLabels()["site"])
+				// labels:=e.Object.GetLabels()
+				// stlog.Print(labels["site"])
+				return true
+			},
+			CreateFunc: func(e event.CreateEvent) bool {
+			 return false
+			},
+			GenericFunc: func(e event.GenericEvent) bool {
+			 return false
+			},
+		   }).
+        Complete(r)
 }
