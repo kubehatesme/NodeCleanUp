@@ -31,12 +31,23 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"fmt"
+	//"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	//"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	//"k8s.io/apimachinery/pkg/types"
+	//"k8s.io/apimachinery/pkg/api/errors"
+	//"k8s.io/utils/pointer"
+
 )
 
 // NodeCleanUpReconciler reconciles a NodeCleanUp object
 type NodeCleanUpReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+
+	NodeInfo *corev1.Node
 }
 
 //+kubebuilder:rbac:groups=nodecleanupcontroller.gitlab.arc.hcloud.io,resources=nodecleanups,verbs=get;list;watch;create;update;patch;delete
@@ -53,28 +64,130 @@ type NodeCleanUpReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.17.2/pkg/reconcile
 func (r *NodeCleanUpReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	//log := log.FromContext(ctx)
+
 	//_ = log.FromContext(ctx)
+	// if r.NodeInfo.Name != "" || r.NodeInfo.Site != "" || r.NodeInfo.IpAddress != "" {
+	// 	//stlog.Print("Delete event received for Node\nNode Name: ",r.NodeInfo.Name, "\nNode site: ", r.NodeInfo.Site,"\nNode ip: ",r.NodeInfo.IpAddress)
 
-	node := &corev1.Node{}
-	if err := r.Get(ctx, req.NamespacedName, node); err != nil {
-			// You can add your handling logic here, like marking some other resource as deleted or triggering other actions.
-			stlog.Print("Error getting Node")
+	// 	pod := NewPod(&r.NodeInfo)
+
+	// 	_, errCreate := ctrl.CreateOrUpdate(ctx, r.Client, pod, func() error {
+    //             return ctrl.SetControllerReference(&r.NodeInfo, pod, r.Scheme)
+    //     })
+
+    //     if errCreate != nil {
+    //             log.Error(errCreate, "Error creating pod")
+    //             return ctrl.Result{}, nil
+    //     }
+		
+	// }
+	infoName:=r.NodeInfo.Name
+	infoAddress:=r.NodeInfo.Status.Addresses[0].Address
+	infoSite:=r.NodeInfo.Labels["site"]
+
+	stlog.Println(infoName, " ",infoAddress, " ",infoSite)
+
+
+	labels := map[string]string{
+			"DeletedNode": infoName,
+	}
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      infoName + "cleanup",
+			Labels:    labels,
+			Namespace: "default",
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:    "alpine",
+					Image:   "alpine",
+					Command:  []string{
+						"/bin/sh",
+                    	"-c",
+                    	fmt.Sprintf(
+                        "echo 'Delete event received for Node' && echo 'Node Name: %s' && echo 'Node site: %s' && echo 'Node ip: %s' && sleep 300", // 5 minutes
+                        infoName, infoSite, infoAddress,
+                    ),
+					},
+				},
+			},
+			RestartPolicy: corev1.RestartPolicyOnFailure,
+		},
+	}
+
+    // Set NodeCleanUpReconciler as the owner and controller of the Pod
+    // if err := controllerutil.SetControllerReference(r, pod, r.Scheme); err != nil {
+	// 	stlog.Println("controllerutil error \n")
+	// 	return ctrl.Result{}, err
+	// }
+
+	err := r.Create(ctx, pod)
+		stlog.Println("trying pod create \n")
+		if err != nil {
 			return ctrl.Result{}, err
-	}
+		}
 
-	if !node.ObjectMeta.DeletionTimestamp.IsZero() {
-		stlog.Printf("Node %s has been deleted!\n", node.Name)
-	}
+	// Check if this Pod already exists
+	// found := &corev1.Pod{}
+	// err := r.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
+	// if err != nil && errors.IsNotFound(err) {
+	// 	// Pod not found, create it
+	// 	err = r.Create(ctx, pod)
+	// 	stlog.Println("trying pod create \n")
+	// 	if err != nil {
+	// 		return ctrl.Result{}, err
+	// 	}
+	// 	// Pod created successfully - don't requeue
+	// 	return ctrl.Result{}, nil
+	// } else if err != nil {
+	// 	// Error getting the Pod
+	// 	return ctrl.Result{}, err
+	// }
 
-	// TODO(user): your logic here
-
+	// Pod already exists - don't requeue
 	return ctrl.Result{}, nil
 }
 
+// func NewPod(info *NodeInfo) *corev1.Pod {
+// 	infoName:=info.Name
+// 	infoAddress:=info.Status.Addresses[0].Address
+// 	infoSite:=info.Labels["site"]
+
+
+// 	labels := map[string]string{
+// 			"DeletedNode": info.Name,
+// 	}
+
+// 	return &corev1.Pod{
+// 		ObjectMeta: metav1.ObjectMeta{
+// 			Name:      infoName + "cleanup",
+// 			Labels:    labels,
+// 		},
+// 		Spec: corev1.PodSpec{
+// 			Containers: []corev1.Container{
+// 				{
+// 					Name:    "alpine",
+// 					Image:   "alpine",
+// 					Command:  []string{
+// 						"/bin/sh",
+// 						"-c",
+// 						fmt.Sprintf(
+// 							"echo 'Delete event received for Node' && echo 'Node Name: %s' && echo 'Node site: %s' && echo 'Node ip: %s'",
+// 							infoName, infoSite, infoAddress,
+// 						),
+// 					},
+// 				},
+// 			},
+// 			RestartPolicy: corev1.RestartPolicyOnFailure,
+// 		},
+// 	}
+// }
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *NodeCleanUpReconciler) SetupWithManager(mgr ctrl.Manager) error {
-
-	var DeletedNode *corev1.Node
 
 	return ctrl.NewControllerManagedBy(mgr).
         For(&corev1.Node{}). // Node 리소스에 대한 워처를 설정합니다.
@@ -84,10 +197,7 @@ func (r *NodeCleanUpReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			 return false
 			},
 			DeleteFunc: func(e event.DeleteEvent) bool {
-
-				DeletedNode = e.Object.(*corev1.Node)
-
-				stlog.Print("Delete event received for Node\nNode Name: ",DeletedNode.ObjectMeta.Name, "\nNode site: ", DeletedNode.Labels["site"],"\nNode ip: ",DeletedNode.Status.Addresses[0].Address)
+				r.NodeInfo=e.Object.(*corev1.Node)
 				return true
 			},
 			CreateFunc: func(e event.CreateEvent) bool {
