@@ -1,0 +1,9 @@
+apiVersion: nodecleanupcontroller.gitlab.arc.hcloud.io/v1
+kind: NodeCleanUp
+metadata:
+  labels:
+    app.kubernetes.io/name: nodecleanup
+    app.kubernetes.io/managed-by: kustomize
+  name: nodecleanup-sample
+spec:
+  # TODO(user): Add fields here

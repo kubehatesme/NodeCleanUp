@@ -1,0 +1,31 @@
+# permissions for end users to edit nodecleanups.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: nodecleanup-editor-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: nodecleanup
+    app.kubernetes.io/part-of: nodecleanup
+    app.kubernetes.io/managed-by: kustomize
+  name: nodecleanup-editor-role
+rules:
+- apiGroups:
+  - nodecleanupcontroller.gitlab.arc.hcloud.io
+  resources:
+  - nodecleanups
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - nodecleanupcontroller.gitlab.arc.hcloud.io
+  resources:
+  - nodecleanups/status
+  verbs:
+  - get

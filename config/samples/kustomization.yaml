@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- nodecleanupcontroller_v1_nodecleanup.yaml
+#+kubebuilder:scaffold:manifestskustomizesamples

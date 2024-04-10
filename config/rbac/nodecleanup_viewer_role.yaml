@@ -1,0 +1,27 @@
+# permissions for end users to view nodecleanups.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: nodecleanup-viewer-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: nodecleanup
+    app.kubernetes.io/part-of: nodecleanup
+    app.kubernetes.io/managed-by: kustomize
+  name: nodecleanup-viewer-role
+rules:
+- apiGroups:
+  - nodecleanupcontroller.gitlab.arc.hcloud.io
+  resources:
+  - nodecleanups
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - nodecleanupcontroller.gitlab.arc.hcloud.io
+  resources:
+  - nodecleanups/status
+  verbs:
+  - get
