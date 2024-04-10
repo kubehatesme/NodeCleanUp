@@ -22,9 +22,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	//"sigs.k8s.io/controller-runtime/pkg/log"
 
-	nodecleanupcontrollerv1 "gitlab.arc.hcloud.io/ccp/hks/node-cleanup-controller/api/v1"
+	//nodecleanupcontrollerv1 "gitlab.arc.hcloud.io/ccp/hks/node-cleanup-controller/api/v1"
 
 	//////hyunyoung added//////
 	stlog "log"
@@ -73,6 +73,9 @@ func (r *NodeCleanUpReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *NodeCleanUpReconciler) SetupWithManager(mgr ctrl.Manager) error {
+
+	var DeletedNode *corev1.Node
+
 	return ctrl.NewControllerManagedBy(mgr).
         For(&corev1.Node{}). // Node 리소스에 대한 워처를 설정합니다.
 		//Watches(&corev1.Event{}, &handler.EnqueueRequestForObject{}).
@@ -81,9 +84,10 @@ func (r *NodeCleanUpReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			 return false
 			},
 			DeleteFunc: func(e event.DeleteEvent) bool {
-				stlog.Print("Delete event received for Node :", e.Object.GetName(), "\n", e.Object.GetLabels()["site"])
-				// labels:=e.Object.GetLabels()
-				// stlog.Print(labels["site"])
+
+				DeletedNode = e.Object.(*corev1.Node)
+
+				stlog.Print("Delete event received for Node\nNode Name: ",DeletedNode.ObjectMeta.Name, "\nNode site: ", DeletedNode.Labels["site"],"\nNode ip: ",DeletedNode.Status.Addresses[0].Address)
 				return true
 			},
 			CreateFunc: func(e event.CreateEvent) bool {
