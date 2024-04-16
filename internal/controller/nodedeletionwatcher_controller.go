@@ -28,7 +28,7 @@ import (
 	//nodecleanupcontrollerv1 "gitlab.arc.hcloud.io/ccp/hks/node-cleanup-controller/api/v1"
 
 	//////hyunyoung added//////
-	stlog "log"
+
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -40,6 +40,7 @@ import (
 	//"os/exec"
 
 	"fmt"
+	"sync"
 	//"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	//"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	//"k8s.io/apimachinery/pkg/types"
@@ -47,18 +48,15 @@ import (
 	//"k8s.io/utils/pointer"
 )
 
+var (
+	cmdMutex sync.Mutex
+	cmd      string
+)
+
 // NodeCleanUpReconciler reconciles a NodeCleanUp object
-type NodeCleanUpReconciler struct {
+type NodeDeletionWatcher struct {
 	client.Client
 	Scheme *runtime.Scheme
-
-	NodeInfo struct {
-		Name    string
-		Site    string
-		Address string
-		Zone    string
-		URL     string
-	}
 }
 
 //+kubebuilder:rbac:groups=nodecleanupcontroller.gitlab.arc.hcloud.io,resources=nodecleanups,verbs=get;list;watch;create;update;patch;delete
@@ -74,23 +72,17 @@ type NodeCleanUpReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.17.2/pkg/reconcile
-func (r *NodeCleanUpReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *NodeDeletionWatcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	//log := log.FromContext(ctx)
 
 	//_ = log.FromContext(ctx)
-	cmd := fmt.Sprintf("url=%s; site=%s; echo $(curl -sfL https://${url}/post-scripts/${site}/cleanup.sh | name=%s site=%s zone=%s address=%s)", r.NodeInfo.URL, r.NodeInfo.Site, r.NodeInfo.Name, r.NodeInfo.Site, r.NodeInfo.Zone, r.NodeInfo.Address)
+	//cmd := fmt.Sprintf("url=%s; site=%s; echo $(curl -sfL https://${url}/post-scripts/${site}/cleanup.sh | name=%s site=%s zone=%s address=%s)", r.NodeInfo.URL, r.NodeInfo.Site, r.NodeInfo.Name, r.NodeInfo.Site, r.NodeInfo.Zone, r.NodeInfo.Address)
 	//cmd := fmt.Sprintf("url=%s; site=%s; echo $(curl -sfL https://${url}/post-scripts/${site}/cleanup.sh)", r.NodeInfo.URL, r.NodeInfo.Site)
 	// out, err := exec.Command("bash", "-c", cmd).Output()
 	// if err != nil {
 	// 	fmt.Printf("error %s", err)
 	// }
 	// fmt.Println(string(out))
-
-	stlog.Println(r.NodeInfo.Name, " ", r.NodeInfo.Address, " ", r.NodeInfo.Site)
-
-	labels := map[string]string{
-		"DeletedNode": r.NodeInfo.Name,
-	}
 
 	///////////new pod///////////////
 	// pod := &corev1.Pod{
@@ -131,45 +123,6 @@ func (r *NodeCleanUpReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// 	return ctrl.Result{}, err
 	// }
 	///////////new pod///////////////
-
-	deploy := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: r.NodeInfo.Name + "cleanup-",
-			Labels:       labels,
-			Namespace:    "default",
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: int32Ptr(1), // Replica 수 설정
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app": "cleanup",
-				},
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"app": "cleanup",
-					},
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:    "alpine",
-							Image:   "library/alpine/curl:3.15.4",
-							Command: []string{"sh", "-c"},
-							Args:    []string{cmd + "&& sleep 300"},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	err := r.Create(ctx, deploy)
-	stlog.Println("trying deployment create")
-	if err != nil {
-		return ctrl.Result{}, err
-	}
 
 	// Set NodeCleanUpReconciler as the owner and controller of the Pod
 	// if err := controllerutil.SetControllerReference(r, pod, r.Scheme); err != nil {
@@ -232,10 +185,8 @@ func (r *NodeCleanUpReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 // 	}
 // }
 
-func int32Ptr(i int32) *int32 { return &i }
-
 // SetupWithManager sets up the controller with the Manager.
-func (r *NodeCleanUpReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *NodeDeletionWatcher) SetupWithManager(mgr ctrl.Manager) error {
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Node{}). // Node 리소스에 대한 워처를 설정합니다.
@@ -245,22 +196,39 @@ func (r *NodeCleanUpReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				return false
 			},
 			DeleteFunc: func(e event.DeleteEvent) bool {
-				r.NodeInfo.Name = e.Object.(*corev1.Node).Name
-				r.NodeInfo.Address = e.Object.(*corev1.Node).Status.Addresses[0].Address
-				lenLabelSite := len(e.Object.(*corev1.Node).Labels["site"])               // to extract site & zone from label "site"
-				r.NodeInfo.Site = e.Object.(*corev1.Node).Labels["site"][:lenLabelSite-4] //extract site from label "site"
-				r.NodeInfo.Zone = e.Object.(*corev1.Node).Labels["site"][lenLabelSite-3:] //extract zone from label "site"
+				node, ok := e.Object.(*corev1.Node)
+				nodeName := node.Name
+				nodeAddress := node.Status.Addresses[0].Address
+				lenLabelSite := len(node.Labels["site"])         // to extract site & zone from label "site"
+				nodeSite := node.Labels["site"][:lenLabelSite-4] //extract site from label "site"
+				nodeZone := node.Labels["site"][lenLabelSite-3:] //extract zone from label "site"
 
-				if strings.Contains(r.NodeInfo.Site, "arc") {
-					r.NodeInfo.URL = "gitlab.arc.hcloud.io/common/rancher/-/raw/master"
-				} else if strings.Contains(r.NodeInfo.Site, "ap-northeast") {
-					r.NodeInfo.URL = "/code.hcloud.hmc.co.kr/common/rancher/-/raw/master"
-				} else if strings.Contains(r.NodeInfo.Site, "us-west") {
-					r.NodeInfo.URL = "package-uswe.hcloud.hmc.co.kr/repository"
-				} else if strings.Contains(r.NodeInfo.Site, "ap-southeast") {
-					r.NodeInfo.URL = "package-sg.hcloud.hmc.co.kr/repository"
-				} else if strings.Contains(r.NodeInfo.Site, "eu-central") {
-					r.NodeInfo.URL = "package-eu.auto-hmg.io/repository"
+				var url string
+				if strings.Contains(nodeSite, "arc") {
+					url = "gitlab.arc.hcloud.io/common/rancher/-/raw/master"
+				} else if strings.Contains(nodeSite, "ap-northeast") {
+					url = "/code.hcloud.hmc.co.kr/common/rancher/-/raw/master"
+				} else if strings.Contains(nodeSite, "us-west") {
+					url = "package-uswe.hcloud.hmc.co.kr/repository"
+				} else if strings.Contains(nodeSite, "ap-southeast") {
+					url = "package-sg.hcloud.hmc.co.kr/repository"
+				} else if strings.Contains(nodeSite, "eu-central") {
+					url = "package-eu.auto-hmg.io/repository"
+				}
+
+				if ok {
+					cmdMutex.Lock()
+					cmd = fmt.Sprintf("url=%s; site=%s; echo $(curl -sfL https://${url}/post-scripts/${site}/cleanup.sh | name=%s site=%s zone=%s address=%s sh -)", url, nodeSite, nodeName, nodeSite, nodeZone, nodeAddress)
+					//probecmd := fmt.Sprintf("url=%s; site=%s; echo $(curl -sfL https://${url}/post-scripts/${site}/cleanup.sh | sh -)", url, nodeSite)
+					cmdMutex.Unlock()
+					fmt.Println("executing: ", cmd)
+
+					deployment := createDeployment(nodeName)
+					if err := r.Create(context.Background(), deployment); err != nil {
+						fmt.Printf("Failed to create deployment: %v\n", err)
+					} else {
+						fmt.Printf("Created deployment for node %s\n", node.Name)
+					}
 				}
 
 				return true
@@ -274,3 +242,52 @@ func (r *NodeCleanUpReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}).
 		Complete(r)
 }
+
+func createDeployment(name string) *appsv1.Deployment {
+	// Example deployment creation logic
+	deployment := &appsv1.Deployment{
+		// Fill in the deployment spec based on the node's labels
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: name + "-cleanup-",
+			Namespace:    "default",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: int32Ptr(1), // Replica 수 설정
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": "cleanup-" + name,
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"app": "cleanup-" + name,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:    "alpine",
+							Image:   "library/alpine/curl:3.15.4",
+							Command: []string{"sleep"},
+							Args:    []string{"infinity"},
+							ReadinessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									Exec: &corev1.ExecAction{
+										Command: []string{"sh", "-c", "response=\"$cmd\"; if [ -n \"$response\" ]; then echo \"$response\"; exit 0; else exit 1; fi"},
+									},
+								},
+								InitialDelaySeconds: 20,
+								PeriodSeconds:       10,
+								FailureThreshold:    3,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	return deployment
+}
+
+func int32Ptr(i int32) *int32 { return &i }

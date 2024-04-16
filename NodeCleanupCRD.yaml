@@ -1,0 +1,11 @@
+apiVersion: nodecleanupcontroller.gitlab.arc.hcloud.io/v1
+kind: NodeCleanUp
+metadata:
+  name: nodecleanup-test
+spec:
+  Name: "test.h53"
+  Site: "ap-northeast-arc2"
+  Address: "12.23.34.45"
+  Zone: "stg"
+  URL: "gitlab.arc.hcloud.io/common/rancher/-/raw/master"
+

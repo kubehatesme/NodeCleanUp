@@ -39,13 +39,29 @@ spec:
           spec:
             description: NodeCleanUpSpec defines the desired state of NodeCleanUp
             properties:
-              foo:
+              address:
+                type: string
+              name:
                 description: Foo is an example field of NodeCleanUp. Edit nodecleanup_types.go
                   to remove/update
+                type: string
+              site:
+                type: string
+              url:
+                type: string
+              zone:
                 type: string
             type: object
           status:
             description: NodeCleanUpStatus defines the observed state of NodeCleanUp
+            properties:
+              cleanup:
+                description: |-
+                  INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
+                  Important: Run "make" to regenerate code after modifying this file
+                type: boolean
+            required:
+            - cleanup
             type: object
         type: object
     served: true

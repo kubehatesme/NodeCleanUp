@@ -29,13 +29,18 @@ type NodeCleanUpSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// Foo is an example field of NodeCleanUp. Edit nodecleanup_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	Name    string `json:"name,omitempty"`
+	Site    string `json:"site,omitempty"`
+	Address string `json:"address,omitempty"`
+	Zone    string `json:"zone,omitempty"`
+	URL     string `json:"url,omitempty"`
 }
 
 // NodeCleanUpStatus defines the observed state of NodeCleanUp
 type NodeCleanUpStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+	Cleanup bool `json:"cleanup"`
 }
 
 //+kubebuilder:object:root=true
